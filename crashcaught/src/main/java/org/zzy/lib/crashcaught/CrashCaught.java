@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 
@@ -30,6 +31,7 @@ import me.weishu.reflection.Reflection;
  * ================================================
  */
 public class CrashCaught {
+    private static final String TAG = CrashCaught.class.getSimpleName();
 
     /**
      * 是否已经初始化过了
@@ -47,14 +49,15 @@ public class CrashCaught {
 
     private static ICrashListener mCrashListener;
 
+
     public static void init(Context context, ICrashListener listener) {
         if (isInited) {
             return;
         }
-        try{
+        try {
             //解除 android P 反射限制
             Reflection.unseal(context);
-        }catch (Throwable e){
+        } catch (Throwable e) {
             e.printStackTrace();
         }
         isInited = true;
@@ -69,10 +72,11 @@ public class CrashCaught {
                 }
                 //判断是否在主线程
                 if (t == Looper.getMainLooper().getThread()) {
+                    Log.d(TAG, "main thread crash");
                     mCrashListener.onMainThreadCrashHappened(t, e);
+                    isChoreographerException(e);
                     //进入安全模式
                     enterSafeMode();
-                    isChoreographerException(e);
                 } else {
                     mCrashListener.onWorkerThreadCrashHappened(t, e);
                 }
@@ -81,14 +85,17 @@ public class CrashCaught {
     }
 
     private static void enterSafeMode() {
+        Log.d(TAG, "enterSafeMode");
         isEnterSafeMode = true;
         if (mCrashListener != null) {
             mCrashListener.onEnterSafeMode();
         }
         while (true) {
             try {
+                Log.d(TAG, "start loop");
                 Looper.loop();
             } catch (Throwable e) {
+                Log.d(TAG, "safe mode crash");
                 isChoreographerException(e);
                 if (mCrashListener != null) {
                     mCrashListener.onSafeModeCrashHappened(e);
@@ -98,6 +105,7 @@ public class CrashCaught {
     }
 
     private static void isChoreographerException(Throwable e) {
+        Log.d(TAG, "isChoreographerException(e);");
         if (e == null || mCrashListener == null) {
             return;
         }
@@ -130,7 +138,6 @@ public class CrashCaught {
     public static final int DESTROY_ACTIVITY = 109;
     //android 28以后生命周期的改变使用这个code
     public static final int EXECUTE_TRANSACTION = 159;
-
 
 
     private static void hookmH() throws Exception {
@@ -203,8 +210,9 @@ public class CrashCaught {
                     }
                     return false;
                 }
-                switch (msg.what){
-                    case LAUNCH_ACTIVITY:// startActivity--> activity.attach  activity.onCreate  r.activity!=null  activity.onStart  activity.onResume
+                switch (msg.what) {
+                    case LAUNCH_ACTIVITY:// startActivity--> activity.attach  activity.onCreate  r.activity!=null  activity
+                        // .onStart  activity.onResume
                         try {
                             mHHandler.handleMessage(msg);
                         } catch (Throwable throwable) {
@@ -251,7 +259,7 @@ public class CrashCaught {
     }
 
 
-    private static void initKiller(){
+    private static void initKiller() {
         //各版本android的ActivityManager获取方式，finishActivity的参数，token(binder对象)的获取不一样
         if (Build.VERSION.SDK_INT >= 28) {
             mActivityKiller = new ActivityKillerV28();
@@ -276,18 +284,18 @@ public class CrashCaught {
 
 
     /**
-    * 用于hook时出错回调，一定在主线程执行
-    * 作者: ZhouZhengyi
-    * 创建时间: 2021/3/4 14:35
-    */
-    private static void notifyException(Throwable e){
-        if(mCrashListener == null){
+     * 用于hook时出错回调，一定在主线程执行
+     * 作者: ZhouZhengyi
+     * 创建时间: 2021/3/4 14:35
+     */
+    private static void notifyException(Throwable e) {
+        if (mCrashListener == null) {
             return;
         }
-        if(isEnterSafeMode){
+        if (isEnterSafeMode) {
             mCrashListener.onSafeModeCrashHappened(e);
-        }else{
-            mCrashListener.onMainThreadCrashHappened(Looper.getMainLooper().getThread(),e);
+        } else {
+            mCrashListener.onMainThreadCrashHappened(Looper.getMainLooper().getThread(), e);
             enterSafeMode();
         }
     }
